@@ -37,32 +37,58 @@ class ModelAttributeEventBehaviour extends Behavior
     {
         return [
             ActiveRecord::EVENT_AFTER_UPDATE => 'onAfterUpdate',
-            ActiveRecord::EVENT_AFTER_INSERT => 'onAfterInsert'
+            ActiveRecord::EVENT_AFTER_INSERT => 'onAfterInsert',
+            ActiveRecord::EVENT_BEFORE_UPDATE => 'onBeforeUpdate',
         ];
     }
 
     public function onAfterUpdate($event)
     {
-        $this->event($event, false, 'onChange');
+        $this->event($event, false, 'onChange', $event->changedAttributes);
     }
 
     public function onAfterInsert($event)
     {
-        $this->event($event, true, 'onInsert');
+        $this->event($event, true, 'onInsert', $event->changedAttributes);
     }
 
-    protected function event($event, $insert, $methodPrefix)
+    public function onBeforeUpdate($event)
     {
-        /**
-         * @var ActiveRecord $owner
-         */
-        $changedAttributes = $event->changedAttributes;
+        /** @var ActiveRecord $owner */
+        $owner = $this->owner;
+        $dirty = $owner->getDirtyAttributes();
+        $changedAttributes = [];
+
+        foreach ($dirty as $attribute => $newValue) {
+            $oldValue = $owner->getOldAttribute($attribute);
+            $changedAttributes[$attribute] = $oldValue;
+        }
+
+        $this->event($event, false, 'onBeforeChange', $changedAttributes);
+    }
+
+    /**
+     * @param \yii\base\Event|\yii\db\AfterSaveEvent $event
+     * @param bool $insert
+     * @param string $methodPrefix
+     */
+    protected function event($event, $insert, $methodPrefix, $changedAttributes)
+    {
+        /** @var ActiveRecord $owner */
+        $owner = $this->owner;
         foreach ($changedAttributes as $attribute => $oldValue) {
             $method = $methodPrefix . ucfirst($attribute);
-            $owner = $this->owner;
             if (method_exists($this, $method)) {
                 $newValue = $owner->getAttribute($attribute);
-                call_user_func([$this, $method], $event, $insert, $owner, $newValue, $oldValue, $changedAttributes);
+                call_user_func(
+                    [$this, $method],
+                    $event,
+                    $insert,
+                    $owner,
+                    $newValue,
+                    $oldValue,
+                    $changedAttributes
+                );
             }
         }
     }
